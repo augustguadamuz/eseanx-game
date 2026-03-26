@@ -1,0 +1,1083 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EseanX – SF Adventure</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323:wght@400&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #0a0a1a;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    font-family: 'Press Start 2P', monospace;
+    overflow: hidden;
+  }
+
+  #gameWrapper {
+    position: relative;
+    width: 800px;
+  }
+
+  #hud {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 12px;
+    background: #1a1a2e;
+    border: 3px solid #e94560;
+    border-bottom: none;
+    font-size: 9px;
+    color: #ffd700;
+    letter-spacing: 1px;
+  }
+
+  #hud span { color: #fff; margin-left: 6px; }
+
+  #gameCanvas {
+    display: block;
+    border: 3px solid #e94560;
+    background: #1a1a2e;
+    image-rendering: pixelated;
+  }
+
+  #missionBanner {
+    position: absolute;
+    top: 60px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0,0,0,0.85);
+    border: 2px solid #ffd700;
+    color: #ffd700;
+    font-size: 8px;
+    padding: 10px 18px;
+    text-align: center;
+    pointer-events: none;
+    z-index: 10;
+    white-space: nowrap;
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+
+  #controls {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 12px;
+    background: #1a1a2e;
+    border: 3px solid #e94560;
+    border-top: none;
+    font-size: 7px;
+    color: #888;
+  }
+
+  #screen {
+    position: absolute;
+    top: 38px; left: 3px;
+    width: calc(100% - 6px);
+    height: calc(100% - 76px);
+    background: rgba(0,0,0,0.92);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 20;
+    color: #ffd700;
+    text-align: center;
+    gap: 16px;
+  }
+  #screen.hidden {
+    display: none !important;
+  }
+
+  #screen h1 { font-size: 18px; color: #e94560; line-height: 1.6; text-shadow: 3px 3px 0 #000; }
+  #screen p { font-size: 9px; color: #ccc; line-height: 2; }
+  #screen .subtitle { font-size: 10px; color: #ffd700; }
+
+  .btn {
+    background: #e94560;
+    color: #fff;
+    border: none;
+    font-family: 'Press Start 2P', monospace;
+    font-size: 9px;
+    padding: 12px 24px;
+    cursor: pointer;
+    border-bottom: 4px solid #a01030;
+    transition: all 0.1s;
+    margin: 4px;
+  }
+  .btn:hover { background: #ff6080; }
+  .btn:active { border-bottom: 1px solid #a01030; transform: translateY(3px); }
+
+  .blink { animation: blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  #missionList { font-size: 8px; color: #aaa; line-height: 2.4; text-align: left; }
+  #missionList .done { color: #4caf50; }
+  #missionList .active { color: #ffd700; }
+  #missionList .locked { color: #444; }
+</style>
+</head>
+<body>
+
+<div id="gameWrapper">
+  <div id="hud">
+    <div>SCORE: <span id="scoreDisplay">0</span></div>
+    <div>MISSION: <span id="missionDisplay">1/5</span></div>
+    <div>LIVES: <span id="livesDisplay">❤️❤️❤️</span></div>
+    <div>COINS: <span id="coinsDisplay">0</span></div>
+  </div>
+  <canvas id="gameCanvas" width="800" height="420"></canvas>
+  <div id="missionBanner"></div>
+  <div id="controls">
+    <span>← → MOVE &nbsp;|&nbsp; SPACE / ↑ JUMP &nbsp;|&nbsp; Z DASH</span>
+    <span id="missionHint"></span>
+  </div>
+
+  <div id="screen">
+    <h1>🌉 EseanX 🌉</h1>
+    <div class="subtitle">A San Francisco Adventure</div>
+    <p>Play as <b style="color:#ffd700">EseanX</b> — SF's boldest hero!<br>Complete 5 missions across the city!<br>Collect coins, dodge cable cars & fog monsters!</p>
+    <div id="missionList">
+      <div class="active">▶ MISSION 1: The Castro Cable Car Chase</div>
+      <div class="locked">■ MISSION 2: Fisherman's Wharf Heist</div>
+      <div class="locked">■ MISSION 3: Golden Gate Gust</div>
+      <div class="locked">■ MISSION 4: Alcatraz Escape</div>
+      <div class="locked">■ MISSION 5: Twin Peaks Summit</div>
+    </div>
+    <button class="btn" id="startBtn">▶ START GAME</button>
+    <p style="font-size:7px;color:#555;">Arrow Keys / WASD to move, SPACE to jump</p>
+  </div>
+</div>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const W = canvas.width, H = canvas.height;
+
+// ─── PALETTE ───────────────────────────────────────────────────────────────
+const C = {
+  sky: ['#1a1a4e','#2e2e8e','#4444cc','#6688ff','#88aaff'],
+  ground: '#b87333',
+  brick: '#c0522a',
+  brickDark: '#8b3920',
+  gold: '#ffd700',
+  coinGlow: '#ffee55',
+  player: '#c68642',
+  playerShirt: '#228b22',
+  enemy: '#e94560',
+  fogMonster: '#aaccee',
+  platform: '#8b7355',
+  platformTop: '#c4a882',
+  flag: '#4caf50',
+};
+
+// ─── MISSIONS ──────────────────────────────────────────────────────────────
+const MISSIONS = [
+  { name:"Castro Cable Car Chase", bg:['#1a1a4e','#2a2a6e'], groundColor:'#8b6914', details:"Ride the rails & dodge cable cars!", coinsNeeded:10, enemyType:'cablecar', bgElements:'victorian' },
+  { name:"Fisherman's Wharf Heist", bg:['#0a2a4e','#0a3a6e'], groundColor:'#5a7a3a', details:"Collect sourdough, dodge sea lions!", coinsNeeded:15, enemyType:'sealion', bgElements:'wharf' },
+  { name:"Golden Gate Gust", bg:['#ff6b35','#cc3300'], groundColor:'#8b5a2b', details:"Cross the bridge in heavy fog!", coinsNeeded:12, enemyType:'fogmonster', bgElements:'bridge' },
+  { name:"Alcatraz Escape", bg:['#1a3a1a','#2a5a2a'], groundColor:'#4a4a4a', details:"Break out and swim to shore!", coinsNeeded:18, enemyType:'guard', bgElements:'prison' },
+  { name:"Twin Peaks Summit", bg:['#2a1a4e','#3a2a6e'], groundColor:'#5a8a3a', details:"Reach the top for the city view!", coinsNeeded:20, enemyType:'tourist', bgElements:'hills' },
+];
+
+// ─── GAME STATE ────────────────────────────────────────────────────────────
+let state = 'title';
+let mission = 0;
+let score = 0;
+let lives = 10;
+let coinsCollected = 0;
+let levelScroll = 0;
+let keys = {};
+let particles = [];
+let entities = [];
+let coins = [];
+let platforms = [];
+let flags = [];
+let bgObjs = [];
+
+// ─── PLAYER ────────────────────────────────────────────────────────────────
+const player = {
+  x: 80, y: 300, w: 28, h: 36,
+  vx: 0, vy: 0,
+  onGround: false,
+  alive: true,
+  invincible: 0,
+  dashing: false,
+  dashTimer: 0,
+  frame: 0,
+  frameTimer: 0,
+  facing: 1,
+  jumpBuffer: 0,
+};
+
+const GRAVITY = 0.3;
+const SPEED = 5.5;
+const JUMP = -17;
+const DASH_SPEED = 12;
+const GROUND_Y = H - 60;
+
+// ─── INPUT ─────────────────────────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  keys[e.code] = true;
+  if (state === 'playing' && (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW')) {
+    player.jumpBuffer = 10;
+  }
+  e.preventDefault();
+});
+document.addEventListener('keyup', e => { keys[e.code] = false; });
+
+document.getElementById('startBtn').addEventListener('click', () => {
+  startMission(0);
+});
+
+// ─── LEVEL GENERATION ──────────────────────────────────────────────────────
+function generateLevel(mIdx) {
+  const m = MISSIONS[mIdx];
+  platforms = [];
+  coins = [];
+  entities = [];
+  flags = [];
+  bgObjs = [];
+  levelScroll = 0;
+
+  // Ground platforms in chunks
+  const LEVEL_W = 3200;
+  let x = 0;
+  while (x < LEVEL_W) {
+    let gap = Math.random() < 0.2 && x > 300 ? Math.floor(Math.random() * 80 + 40) : 0;
+    let w = Math.floor(Math.random() * 160 + 100);
+    platforms.push({ x, y: GROUND_Y, w, h: 60, isGround: true });
+    x += w + gap;
+  }
+  // Platforms above — but NOT in the Fat Cheeks arena zone (last 800px)
+  const BOSS_ZONE_START = LEVEL_W - 800;
+  for (let i = 0; i < 28; i++) {
+    let px = 200 + i * 110 + Math.random() * 40;
+    if (px > BOSS_ZONE_START) continue; // skip platforms in boss arena
+    let py = GROUND_Y - 90 - Math.random() * 100;
+    let pw = 60 + Math.random() * 70;
+    platforms.push({ x: px, y: py, w: pw, h: 16 });
+    // Coins above platform
+    for (let c = 0; c < 3; c++) {
+      coins.push({ x: px + 10 + c * 20, y: py - 28, r: 9, collected: false, anim: Math.random()*Math.PI*2 });
+    }
+  }
+  // Boss arena: wide open ground + two low jump platforms for stomping Fat Cheeks
+  platforms.push({ x: BOSS_ZONE_START, y: GROUND_Y, w: 820, h: 60, isGround: true }); // solid floor
+  platforms.push({ x: BOSS_ZONE_START + 150, y: GROUND_Y - 80, w: 120, h: 16 }); // left stomp platform
+  platforms.push({ x: BOSS_ZONE_START + 500, y: GROUND_Y - 80, w: 120, h: 16 }); // right stomp platform
+  // Bonus coins scattered in the arena
+  for (let c = 0; c < 8; c++) {
+    coins.push({ x: BOSS_ZONE_START + 80 + c * 80, y: GROUND_Y - 40, r: 9, collected: false, anim: Math.random()*Math.PI*2 });
+  }
+  // Ground coins
+  for (let i = 0; i < 20; i++) {
+    coins.push({ x: 150 + i * 140, y: GROUND_Y - 28, r: 9, collected: false, anim: Math.random()*Math.PI*2 });
+  }
+  // Enemies
+  for (let i = 0; i < 12 + mIdx * 2; i++) {
+    entities.push(spawnEnemy(300 + i * 220, GROUND_Y, m.enemyType));
+  }
+  // Fat Cheeks boss — appears once per level near the end
+  entities.push({
+    x: LEVEL_W - 600, y: GROUND_Y - 56, w: 52, h: 56,
+    vx: -(0.5 + mIdx * 0.1), vy: 0,
+    type: 'fatcheeks', alive: true, frame: 0, frameTimer: 0,
+    hp: 1, maxHp: 1, isBoss: true,
+    wobble: 0, angryTimer: 0
+  });
+  // Boss arena entry marker
+  bgObjs.push({ x: BOSS_ZONE_START + 60, type: 'boss_sign', y: 0.5, scale: 1 });
+  // BG objects
+  for (let i = 0; i < 20; i++) {
+    bgObjs.push(genBgObj(mIdx, i * 180 + Math.random() * 100));
+  }
+}
+
+function spawnEnemy(x, groundY, type) {
+  return { x, y: groundY - 32, w: 32, h: 32, vx: -(0.3 + Math.random() * 0.3), vy: 0, type, alive: true, frame: 0, frameTimer: 0 };
+}
+
+function genBgObj(mIdx, x) {
+  const types = {
+    0: ['victorian','lamp','hill'],
+    1: ['boat','lighthouse','crab'],
+    2: ['bridge_tower','fog','bird'],
+    3: ['tower','wall','window'],
+    4: ['tree','rock','antenna'],
+  };
+  let arr = types[mIdx] || ['hill'];
+  return { x, type: arr[Math.floor(Math.random()*arr.length)], y: Math.random()*0.5, scale: 0.5+Math.random()*1 };
+}
+
+// ─── START / RESET ─────────────────────────────────────────────────────────
+function startMission(mIdx) {
+  const screenEl = document.getElementById('screen');
+  screenEl.classList.add('hidden');
+  mission = mIdx;
+  coinsCollected = 0;
+  player.x = 80; player.y = 300; player.vx = 0; player.vy = 0;
+  player.alive = true; player.invincible = 0;
+  generateLevel(mIdx);
+  state = 'playing';
+  showBanner('⚡ EseanX — MISSION ' + (mIdx+1) + ': ' + MISSIONS[mIdx].name, 3000);
+  updateHUD();
+  document.getElementById('missionHint').textContent = 'GET ' + MISSIONS[mIdx].coinsNeeded + ' COINS & REACH THE FLAG!';
+  startLoop();
+}
+
+// ─── HUD ───────────────────────────────────────────────────────────────────
+function updateHUD() {
+  document.getElementById('scoreDisplay').textContent = score;
+  document.getElementById('missionDisplay').textContent = (mission+1)+'/5';
+  document.getElementById('livesDisplay').textContent = lives;
+  document.getElementById('coinsDisplay').textContent = coinsCollected + '/' + MISSIONS[mission].coinsNeeded;
+}
+
+function showBanner(msg, duration) {
+  const b = document.getElementById('missionBanner');
+  b.textContent = msg;
+  b.style.opacity = 1;
+  setTimeout(() => b.style.opacity = 0, duration - 400);
+}
+
+// ─── COLLISION ─────────────────────────────────────────────────────────────
+function rectOverlap(a, b) {
+  return a.x < b.x+b.w && a.x+a.w > b.x && a.y < b.y+b.h && a.y+a.h > b.y;
+}
+
+function resolvePlatforms() {
+  player.onGround = false;
+  for (let p of platforms) {
+    let pw = { x: p.x - levelScroll, y: p.y, w: p.w, h: p.h };
+    if (rectOverlap(player, pw)) {
+      let overlapX = Math.min(player.x+player.w, pw.x+pw.w) - Math.max(player.x, pw.x);
+      let overlapY = Math.min(player.y+player.h, pw.y+pw.h) - Math.max(player.y, pw.y);
+      if (overlapY < overlapX) {
+        if (player.vy > 0 && player.y + player.h - player.vy <= pw.y + 4) {
+          player.y = pw.y - player.h;
+          player.vy = 0;
+          player.onGround = true;
+        } else if (player.vy < 0) {
+          player.y = pw.y + pw.h;
+          player.vy = 0;
+        }
+      } else {
+        if (player.vx > 0) player.x = pw.x - player.w;
+        else player.x = pw.x + pw.w;
+        player.vx = 0;
+      }
+    }
+  }
+}
+
+// ─── UPDATE ────────────────────────────────────────────────────────────────
+function update() {
+  if (state !== 'playing') return;
+
+  // Player movement
+  let moving = false;
+  if (keys['ArrowLeft'] || keys['KeyA']) { player.vx -= 0.9; player.facing = -1; moving = true; }
+  if (keys['ArrowRight'] || keys['KeyD']) { player.vx += 0.9; player.facing = 1; moving = true; }
+
+  // Dash
+  if ((keys['KeyZ'] || keys['ShiftLeft']) && !player.dashing) {
+    player.dashing = true;
+    player.dashTimer = 12;
+    player.vx = player.facing * DASH_SPEED;
+    spawnDashParticles();
+  }
+  if (player.dashTimer > 0) { player.dashTimer--; if (player.dashTimer === 0) player.dashing = false; }
+
+  // Jump with buffer
+  if (player.jumpBuffer > 0) { player.jumpBuffer--; }
+  if (player.jumpBuffer > 0 && player.onGround) {
+    player.vy = JUMP;
+    player.jumpBuffer = 0;
+    spawnJumpParticles();
+  }
+
+  // Friction & cap
+  player.vx *= 0.78;
+  if (Math.abs(player.vx) < 0.1) player.vx = 0;
+  player.vx = Math.max(-SPEED * 1.5, Math.min(SPEED * 1.5, player.vx));
+  player.vy += GRAVITY;
+  player.vy = Math.min(player.vy, 18);
+  player.x += player.vx;
+  player.y += player.vy;
+
+  // Keep player in world x (left edge)
+  if (player.x < 60) { player.x = 60; player.vx = 0; }
+
+  // Scroll
+  if (player.x > W * 0.45) {
+    let scroll = player.x - W * 0.45;
+    levelScroll += scroll * 0.15;
+    player.x -= scroll * 0.15;
+  }
+
+  resolvePlatforms();
+
+  // Fall death
+  if (player.y > H + 60) { die(); return; }
+
+  // Invincibility
+  if (player.invincible > 0) player.invincible--;
+
+  // Animation
+  player.frameTimer++;
+  if (player.frameTimer > 8) { player.frame = (player.frame + 1) % 4; player.frameTimer = 0; }
+
+  // Coins
+  for (let c of coins) {
+    c.anim += 0.05;
+    if (!c.collected && Math.hypot(player.x+player.w/2-(c.x-levelScroll), player.y+player.h/2-c.y) < c.r + 14) {
+      c.collected = true;
+      coinsCollected++;
+      score += 100;
+      spawnCoinParticles(c.x - levelScroll, c.y);
+      updateHUD();
+    }
+  }
+
+  // Enemies
+  for (let e of entities) {
+    if (!e.alive) continue;
+    let ex = e.x - levelScroll;
+    e.x += e.vx;
+    e.vy += GRAVITY;
+    e.y += e.vy;
+    // Ground clamp
+    if (e.y >= GROUND_Y - e.h) { e.y = GROUND_Y - e.h; e.vy = 0; }
+    // Bounce off walls
+    if (e.x < levelScroll + 40 || e.x > levelScroll + W + 500) e.vx *= -1;
+    e.frameTimer++; if (e.frameTimer > 10) { e.frame = (e.frame+1)%2; e.frameTimer=0; }
+
+    // Fat Cheeks special: wobble + speed up when angry
+    if (e.type === 'fatcheeks') {
+      e.wobble = (e.wobble || 0) + 0.15;
+      if (e.angryTimer > 0) e.angryTimer--;
+      // Charge if player nearby
+      let dist = Math.abs((e.x - levelScroll) - player.x);
+      if (dist < 200 && e.angryTimer === 0) {
+        e.vx = -Math.sign(e.x - levelScroll - player.x) * (2.5 + mission * 0.4);
+        e.angryTimer = 40;
+      }
+    }
+
+    // Collision
+    if (player.invincible === 0) {
+      let er = { x: ex, y: e.y, w: e.w, h: e.h };
+      if (rectOverlap(player, er)) {
+        // Stomp from above
+        if (player.vy > 0 && player.y + player.h < e.y + e.h * 0.55) {
+          if (e.type === 'fatcheeks') {
+            e.hp--;
+            player.vy = -10;
+            e.angryTimer = 60;
+            spawnStompParticles(ex + e.w/2, e.y);
+            showBanner(e.hp > 0 ? `FAT CHEEKS: ${e.hp} HP LEFT! 😤` : `FAT CHEEKS DEFEATED! 💥`, 1800);
+            score += 300;
+            if (e.hp <= 0) {
+              e.alive = false;
+              spawnParticles(ex+e.w/2, e.y+e.h/2, '#ff6600', 20, 5);
+              spawnParticles(ex+e.w/2, e.y+e.h/2, '#ffd700', 14, 4);
+              score += 1000;
+            }
+          } else {
+            e.alive = false;
+            player.vy = -8;
+            score += 200;
+            spawnStompParticles(ex + e.w/2, e.y);
+          }
+          updateHUD();
+        } else {
+          die(); return;
+        }
+      }
+    }
+  }
+
+  // Flags
+  for (let f of flags) {
+    let fx = f.x - levelScroll;
+    if (!f.reached && player.x + player.w > fx && player.x < fx + f.w && player.y + player.h > f.y) {
+      f.reached = true;
+      missionComplete();
+    }
+  }
+
+  // Particles
+  particles = particles.filter(p => p.life > 0);
+  for (let p of particles) {
+    p.x += p.vx; p.y += p.vy; p.vy += 0.2; p.life--;
+    p.vx *= 0.95;
+  }
+}
+
+function die() {
+  if (player.invincible > 0) return;
+  lives--;
+  updateHUD();
+  spawnDeathParticles();
+  if (lives <= 0) {
+    state = 'gameover';
+    showScreen('gameover');
+  } else {
+    player.invincible = 180;
+    player.x = 80; player.y = 280; player.vx = 0; player.vy = 0;
+    levelScroll = 0;
+    showBanner('OUCH! TRY AGAIN!', 1800);
+  }
+}
+
+function missionComplete() {
+  state = 'missioncomplete';
+  score += coinsCollected >= MISSIONS[mission].coinsNeeded ? 1000 : 500;
+  updateHUD();
+  showScreen('missioncomplete');
+}
+
+// ─── PARTICLES ─────────────────────────────────────────────────────────────
+function spawnParticles(x, y, color, count, speed) {
+  for (let i = 0; i < count; i++) {
+    let a = Math.random() * Math.PI * 2;
+    let s = speed * (0.5 + Math.random());
+    particles.push({ x, y, vx: Math.cos(a)*s, vy: Math.sin(a)*s - 2, color, life: 30 + Math.random()*20, r: 3 + Math.random()*3 });
+  }
+}
+function spawnCoinParticles(x,y) { spawnParticles(x,y,C.gold,8,3); }
+function spawnJumpParticles() { spawnParticles(player.x+player.w/2, player.y+player.h, '#aaa',5,2); }
+function spawnDashParticles() {
+  for (let i=0;i<8;i++) particles.push({x:player.x+player.w/2,y:player.y+player.h/2, vx:-player.facing*(2+Math.random()*3), vy:(Math.random()-0.5)*2, color:'#22cc44', life:15+Math.random()*10, r:4+Math.random()*4});
+}
+function spawnStompParticles(x,y) { spawnParticles(x,y,'#fff',10,4); spawnParticles(x,y,C.enemy,6,3); }
+function spawnDeathParticles() { spawnParticles(player.x+player.w/2, player.y+player.h/2, C.player, 14, 5); }
+
+// ─── DRAW ──────────────────────────────────────────────────────────────────
+let bgScrollOff = 0;
+
+function draw() {
+  // Sky gradient
+  let m = MISSIONS[mission];
+  let grd = ctx.createLinearGradient(0, 0, 0, GROUND_Y);
+  grd.addColorStop(0, m.bg[0]);
+  grd.addColorStop(1, m.bg[1]);
+  ctx.fillStyle = grd;
+  ctx.fillRect(0, 0, W, H);
+
+  bgScrollOff = levelScroll * 0.25;
+
+  // BG objects
+  for (let o of bgObjs) drawBgObj(o);
+
+  // Stars (night missions)
+  if (mission === 0 || mission === 4) {
+    ctx.fillStyle = 'rgba(255,255,255,0.6)';
+    for (let i = 0; i < 60; i++) {
+      let sx = ((i*137 - bgScrollOff*0.5) % W + W) % W;
+      let sy = (i*59) % (GROUND_Y - 40);
+      ctx.fillRect(sx, sy, 1.5, 1.5);
+    }
+  }
+
+  // Platforms
+  for (let p of platforms) {
+    let px = p.x - levelScroll;
+    if (px > W + 10 || px + p.w < -10) continue;
+    if (p.isGround) {
+      ctx.fillStyle = m.groundColor || C.ground;
+      ctx.fillRect(px, p.y, p.w, p.h);
+      ctx.fillStyle = 'rgba(255,255,255,0.08)';
+      ctx.fillRect(px, p.y, p.w, 6);
+      // Brick pattern
+      ctx.fillStyle = 'rgba(0,0,0,0.15)';
+      for (let bx = px; bx < px+p.w; bx += 40) {
+        ctx.fillRect(bx, p.y, 2, p.h);
+        ctx.fillRect(bx+20, p.y+20, 2, p.h-20);
+      }
+    } else {
+      ctx.fillStyle = C.platform;
+      ctx.fillRect(px, p.y+6, p.w, p.h-6);
+      ctx.fillStyle = C.platformTop;
+      ctx.fillRect(px, p.y, p.w, 8);
+    }
+  }
+
+  // Coins
+  for (let c of coins) {
+    if (c.collected) continue;
+    let cx = c.x - levelScroll;
+    if (cx < -20 || cx > W+20) continue;
+    let bob = Math.sin(c.anim) * 3;
+    ctx.save();
+    ctx.translate(cx, c.y + bob);
+    // Glow
+    ctx.shadowColor = C.coinGlow;
+    ctx.shadowBlur = 10;
+    ctx.fillStyle = C.gold;
+    ctx.beginPath();
+    ctx.arc(0, 0, c.r, 0, Math.PI*2);
+    ctx.fill();
+    ctx.fillStyle = '#fff8';
+    ctx.beginPath();
+    ctx.arc(-2, -2, c.r*0.4, 0, Math.PI*2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.restore();
+  }
+
+  // Enemies
+  for (let e of entities) {
+    if (!e.alive) continue;
+    let ex = e.x - levelScroll;
+    if (ex < -40 || ex > W+40) continue;
+    drawEnemy(e, ex);
+  }
+
+  // Flag
+  for (let f of flags) {
+    let fx = f.x - levelScroll;
+    if (!f.reached) {
+      ctx.fillStyle = '#5a4a3a';
+      ctx.fillRect(fx, f.y, 6, f.h);
+      ctx.fillStyle = C.flag;
+      ctx.fillRect(fx + 6, f.y, 30, 20);
+      ctx.fillStyle = '#fff';
+      ctx.font = '12px sans-serif';
+      ctx.fillText('🏁', fx + 4, f.y + 16);
+    }
+  }
+
+  // Particles
+  for (let p of particles) {
+    ctx.globalAlpha = p.life / 50;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r, 0, Math.PI*2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // Player
+  drawPlayer();
+}
+
+function drawPlayer() {
+  let px = player.x, py = player.y;
+  let flip = player.facing === -1;
+  if (player.invincible > 0 && Math.floor(player.invincible/4) % 2 === 0) return;
+
+  ctx.save();
+  ctx.translate(px + player.w/2, py + player.h/2);
+  if (flip) ctx.scale(-1, 1);
+
+  // Shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.25)';
+  ctx.beginPath(); ctx.ellipse(0, 20, 14, 4, 0, 0, Math.PI*2); ctx.fill();
+
+  // Sneakers (white with red stripe)
+  let legOff = player.onGround ? Math.sin(player.frame * 1.5) * 5 : 0;
+  ctx.fillStyle = '#f0f0f0';
+  ctx.fillRect(-13, 25 + legOff, 11, 7);
+  ctx.fillRect(2, 25 - legOff, 11, 7);
+  ctx.fillStyle = '#e94560';
+  ctx.fillRect(-13, 28 + legOff, 11, 2);
+  ctx.fillRect(2, 28 - legOff, 11, 2);
+
+  // Jeans (dark blue, baggy)
+  ctx.fillStyle = '#1a3a6a';
+  ctx.fillRect(-12, 12, 10, 16 + legOff);
+  ctx.fillRect(2, 12, 10, 16 - legOff);
+  // Jeans highlight
+  ctx.fillStyle = '#2a5aaa44';
+  ctx.fillRect(-11, 14, 4, 10);
+  ctx.fillRect(3, 14, 4, 10);
+
+  // Belt
+  ctx.fillStyle = '#4a2a0a';
+  ctx.fillRect(-12, 10, 24, 4);
+  ctx.fillStyle = '#ffd700';
+  ctx.fillRect(-3, 10, 6, 4);
+
+  // Hoodie / jersey - vibrant green (like a Dodgers-green / Latino style)
+  ctx.fillStyle = '#228b22';
+  ctx.fillRect(-13, -6, 26, 20);
+  // Hoodie pocket
+  ctx.fillStyle = '#1a6a1a';
+  ctx.fillRect(-7, 4, 14, 8);
+  // Jersey number "X"
+  ctx.fillStyle = '#ffd700';
+  ctx.font = 'bold 10px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('X', 0, 8);
+
+  // Neck
+  ctx.fillStyle = '#c68642';
+  ctx.fillRect(-5, -10, 10, 6);
+
+  // Head (medium-brown Latino skin tone)
+  ctx.fillStyle = '#c68642';
+  ctx.fillRect(-11, -26, 22, 18);
+  // Face highlight
+  ctx.fillStyle = '#d4984a22';
+  ctx.fillRect(-9, -24, 10, 8);
+
+  // Hair (black, short fade sides)
+  ctx.fillStyle = '#1a0a00';
+  ctx.fillRect(-11, -28, 22, 6);
+  // Fade sides
+  ctx.fillStyle = '#2a1a0880';
+  ctx.fillRect(-11, -22, 4, 4);
+  ctx.fillRect(7, -22, 4, 4);
+
+  // Fitted cap (black with gold "SF" visor)
+  ctx.fillStyle = '#111';
+  ctx.fillRect(-12, -36, 24, 10);
+  ctx.fillStyle = '#222';
+  ctx.beginPath(); ctx.arc(0, -36, 12, Math.PI, 0); ctx.fill();
+  // Visor
+  ctx.fillStyle = '#ffd700';
+  ctx.fillRect(-14, -28, 6, 3);
+  // SF logo on cap
+  ctx.fillStyle = '#ffd700';
+  ctx.font = 'bold 7px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('SF', 2, -30);
+
+  // Eyes (dark brown)
+  ctx.fillStyle = '#2a1a00';
+  ctx.fillRect(-6, -20, 4, 4);
+  ctx.fillRect(2, -20, 4, 4);
+  // Eye whites
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(-6, -20, 2, 2);
+  ctx.fillRect(2, -20, 2, 2);
+
+  // Eyebrows (thick, expressive)
+  ctx.fillStyle = '#1a0a00';
+  ctx.fillRect(-7, -23, 6, 2);
+  ctx.fillRect(1, -23, 6, 2);
+
+  // Smile
+  ctx.fillStyle = '#8b4513';
+  ctx.fillRect(-4, -13, 8, 2);
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(-3, -13, 6, 1);
+
+  // Chain necklace
+  ctx.strokeStyle = '#ffd700';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.arc(0, -4, 6, 0.2, Math.PI - 0.2);
+  ctx.stroke();
+
+  // Dash trail
+  if (player.dashing) {
+    ctx.globalAlpha = 0.3;
+    ctx.fillStyle = '#22cc44';
+    ctx.fillRect(-14 - 22, -26, 14, 52);
+    ctx.globalAlpha = 1;
+  }
+
+  ctx.restore();
+}
+
+function drawEnemy(e, ex) {
+  ctx.save();
+  ctx.translate(ex + e.w/2, e.y + e.h/2);
+  if (e.vx > 0) ctx.scale(-1,1);
+
+  if (e.type === 'cablecar') {
+    // Cable car
+    ctx.fillStyle = '#cc4400';
+    ctx.fillRect(-16, -10, 32, 24);
+    ctx.fillStyle = '#ff6622';
+    ctx.fillRect(-14, -14, 28, 8);
+    ctx.fillStyle = '#fff8';
+    ctx.fillRect(-10, -8, 8, 10);
+    ctx.fillRect(2, -8, 8, 10);
+    // Wheels
+    ctx.fillStyle = '#333';
+    ctx.beginPath(); ctx.arc(-10, 14, 6, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(10, 14, 6, 0, Math.PI*2); ctx.fill();
+  } else if (e.type === 'sealion') {
+    // Sea lion
+    ctx.fillStyle = '#8b7355';
+    ctx.beginPath(); ctx.ellipse(0, 4, 14, 10, 0, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#a08060';
+    ctx.beginPath(); ctx.ellipse(2, -10, 9, 9, 0, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#000';
+    ctx.beginPath(); ctx.arc(5 + e.frame*2, -12, 2, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#888';
+    ctx.fillRect(-16 + e.frame*4, 8, 8, 4);
+  } else if (e.type === 'fogmonster') {
+    // Fog blob
+    ctx.globalAlpha = 0.85;
+    ctx.fillStyle = '#aaccee';
+    for (let i=0;i<5;i++) {
+      ctx.beginPath();
+      ctx.arc((i-2)*7, Math.sin(i + e.frame)*4, 9+i%3*2, 0, Math.PI*2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = '#334';
+    ctx.beginPath(); ctx.arc(-6, -2, 3, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(6, -2, 3, 0, Math.PI*2); ctx.fill();
+  } else if (e.type === 'guard') {
+    // Prison guard
+    ctx.fillStyle = '#2244aa';
+    ctx.fillRect(-10, -4, 20, 20);
+    ctx.fillStyle = '#ffcc99';
+    ctx.fillRect(-8, -18, 16, 16);
+    ctx.fillStyle = '#001166';
+    ctx.fillRect(-10, -24, 20, 8);
+    ctx.fillStyle = '#000';
+    ctx.beginPath(); ctx.arc(-3, -12, 2, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(3, -12, 2, 0, Math.PI*2); ctx.fill();
+  } else if (e.type === 'fatcheeks') {
+    let angry = e.angryTimer > 0;
+    let wob = Math.sin(e.wobble || 0) * (angry ? 5 : 2);
+
+    // Shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    ctx.beginPath(); ctx.ellipse(0, 26, 22, 5, 0, 0, Math.PI*2); ctx.fill();
+
+    // Body — big round gut
+    ctx.fillStyle = angry ? '#cc2200' : '#884422';
+    ctx.beginPath(); ctx.ellipse(0, 10, 22, 20, 0, 0, Math.PI*2); ctx.fill();
+    // Shirt stripes
+    ctx.fillStyle = angry ? '#ff4400' : '#aa5533';
+    for (let s = -14; s < 22; s += 7) { ctx.fillRect(s - 22, 0, 4, 20); }
+    ctx.fillStyle = 'rgba(255,200,150,0.15)';
+    ctx.beginPath(); ctx.ellipse(-6, 4, 10, 9, -0.3, 0, Math.PI*2); ctx.fill();
+
+    // Legs
+    ctx.fillStyle = '#2a2a6a';
+    ctx.fillRect(-16, 26, 13, 14);
+    ctx.fillRect(3, 26, 13, 14);
+    ctx.fillStyle = '#3a2a1a';
+    ctx.fillRect(-18, 36, 15, 8);
+    ctx.fillRect(3, 36, 15, 8);
+
+    // Head — very wide
+    ctx.fillStyle = '#c47a45';
+    ctx.beginPath(); ctx.ellipse(0 + wob*0.3, -18, 18, 16, 0, 0, Math.PI*2); ctx.fill();
+
+    // PUFFY CHEEKS
+    ctx.fillStyle = angry ? '#ff8855' : '#e8a060';
+    ctx.beginPath(); ctx.ellipse(-18 + wob, -18, 13, 11, 0.2, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(18 + wob, -18, 13, 11, -0.2, 0, Math.PI*2); ctx.fill();
+    // Blush
+    ctx.fillStyle = 'rgba(255,100,80,0.35)';
+    ctx.beginPath(); ctx.ellipse(-19 + wob, -16, 8, 6, 0.2, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(19 + wob, -16, 8, 6, -0.2, 0, Math.PI*2); ctx.fill();
+
+    // Eyes
+    ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.ellipse(-6, -22, 4, 3, 0, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(6, -22, 4, 3, 0, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = angry ? '#ff0000' : '#1a0a00';
+    ctx.beginPath(); ctx.arc(-5, -22, 2, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(7, -22, 2, 0, Math.PI*2); ctx.fill();
+    // Eyebrows
+    ctx.strokeStyle = '#1a0a00'; ctx.lineWidth = 2.5;
+    if (angry) {
+      ctx.beginPath(); ctx.moveTo(-10,-27); ctx.lineTo(-2,-24); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(10,-27); ctx.lineTo(2,-24); ctx.stroke();
+    } else {
+      ctx.beginPath(); ctx.moveTo(-10,-26); ctx.lineTo(-2,-26); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(2,-26); ctx.lineTo(10,-26); ctx.stroke();
+    }
+    // Mouth
+    ctx.fillStyle = '#5a1a00';
+    if (angry) {
+      ctx.beginPath(); ctx.arc(0, -12, 7, 0, Math.PI); ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(-5, -13, 4, 5);
+      ctx.fillRect(1, -13, 4, 5);
+    } else {
+      ctx.beginPath(); ctx.arc(0, -10, 5, Math.PI, 0); ctx.fill();
+    }
+    // Hair
+    ctx.fillStyle = '#1a0a00';
+    ctx.fillRect(-14, -34, 28, 10);
+    ctx.beginPath(); ctx.arc(-12,-32,5,Math.PI,0); ctx.fill();
+    ctx.beginPath(); ctx.arc(0,-34,6,Math.PI,0); ctx.fill();
+    ctx.beginPath(); ctx.arc(12,-32,5,Math.PI,0); ctx.fill();
+
+    // Name tag
+    ctx.fillStyle = 'rgba(0,0,0,0.75)';
+    ctx.fillRect(-30, -56, 60, 14);
+    ctx.fillStyle = angry ? '#ff4400' : '#ffd700';
+    ctx.font = 'bold 8px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('FAT CHEEKS', 0, -45);
+    // HP hearts
+    for (let h = 0; h < e.maxHp; h++) {
+      ctx.fillStyle = h < e.hp ? '#ff3333' : '#333';
+      ctx.font = '10px sans-serif';
+      ctx.fillText('❤', -((e.maxHp-1)*8) + h*16, -60);
+    }
+  } else {
+    // Tourist (default)
+    ctx.fillStyle = '#f5f5dc';
+    ctx.fillRect(-10, -4, 20, 20);
+    ctx.fillStyle = '#ffcc99';
+    ctx.fillRect(-8, -18, 16, 16);
+    ctx.fillStyle = '#ff8c00';
+    ctx.fillRect(-12, -22, 24, 6);
+    // Camera
+    ctx.fillStyle = '#555';
+    ctx.fillRect(10, -8, 10, 7);
+    ctx.fillStyle = '#88ccff';
+    ctx.beginPath(); ctx.arc(15, -5, 3, 0, Math.PI*2); ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawBgObj(o) {
+  let bx = ((o.x - bgScrollOff) % (W + 400) + (W + 400)) % (W + 400) - 200;
+  let by = GROUND_Y - 20;
+  ctx.save();
+  ctx.translate(bx, by);
+  ctx.scale(o.scale, o.scale);
+  ctx.globalAlpha = 0.6 + o.y * 0.4;
+
+  if (o.type === 'boss_sign') {
+    ctx.fillStyle = '#111';
+    ctx.fillRect(-4, -130, 8, 130);
+    ctx.fillStyle = '#e94560';
+    ctx.fillRect(-40, -140, 80, 34);
+    ctx.fillStyle = '#ffd700';
+    ctx.font = 'bold 9px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('⚠ BOSS ARENA ⚠', 0, -120);
+    ctx.fillStyle = '#fff';
+    ctx.font = '7px sans-serif';
+    ctx.fillText('FAT CHEEKS AHEAD', 0, -110);
+  } else if (o.type === 'victorian') {
+    // Victorian house
+    ctx.fillStyle = '#7a5a8a';
+    ctx.fillRect(-25, -80, 50, 80);
+    ctx.fillStyle = '#9a6aaa';
+    ctx.beginPath(); ctx.moveTo(-30,-80); ctx.lineTo(0,-110); ctx.lineTo(30,-80); ctx.fill();
+    ctx.fillStyle = '#5a3a6a';
+    ctx.fillRect(-10, -50, 20, 30);
+    ctx.fillStyle = '#aaa3';
+    ctx.fillRect(-18, -70, 10, 14);
+    ctx.fillRect(8, -70, 10, 14);
+  } else if (o.type === 'bridge_tower') {
+    ctx.fillStyle = '#c0522a';
+    ctx.fillRect(-8, -160, 16, 160);
+    ctx.fillStyle = '#a04020';
+    ctx.fillRect(-14, -160, 6, 160);
+    ctx.fillRect(-8, -160, 16, 8);
+    ctx.fillRect(-8, -120, 16, 8);
+    ctx.fillRect(-8, -80, 16, 8);
+  } else if (o.type === 'boat') {
+    ctx.fillStyle = '#8b7355';
+    ctx.beginPath(); ctx.moveTo(-30,0); ctx.lineTo(30,0); ctx.lineTo(20,20); ctx.lineTo(-20,20); ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(-2,-40, 4, 40);
+    ctx.fillStyle = '#ddd';
+    ctx.beginPath(); ctx.moveTo(2,-40); ctx.lineTo(28,-10); ctx.lineTo(2,-8); ctx.fill();
+  } else if (o.type === 'hill') {
+    ctx.fillStyle = '#2a5a2a';
+    ctx.beginPath(); ctx.arc(0, 0, 60, Math.PI, 0); ctx.fill();
+    ctx.fillStyle = '#3a7a3a';
+    ctx.beginPath(); ctx.arc(-20, -20, 30, Math.PI, 0); ctx.fill();
+    ctx.fillStyle = '#4a9a4a';
+    ctx.beginPath(); ctx.arc(30, -30, 25, Math.PI, 0); ctx.fill();
+  } else if (o.type === 'tower') {
+    ctx.fillStyle = '#555';
+    ctx.fillRect(-12, -120, 24, 120);
+    ctx.fillStyle = '#777';
+    ctx.fillRect(-16, -130, 32, 14);
+    for (let i = 0; i < 4; i++) {
+      ctx.fillStyle = '#88ccff44';
+      ctx.fillRect(-8, -20-i*28, 6, 12);
+      ctx.fillRect(2, -20-i*28, 6, 12);
+    }
+  } else if (o.type === 'fog') {
+    ctx.globalAlpha *= 0.35;
+    ctx.fillStyle = '#cce';
+    for (let i = 0; i < 5; i++) {
+      ctx.beginPath(); ctx.arc(i*20-40, -20, 30, 0, Math.PI*2); ctx.fill();
+    }
+  } else {
+    // Generic tree
+    ctx.fillStyle = '#5a3a1a';
+    ctx.fillRect(-5, -60, 10, 60);
+    ctx.fillStyle = '#2a6a2a';
+    ctx.beginPath(); ctx.arc(0, -60, 22, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(0, -80, 16, 0, Math.PI*2); ctx.fill();
+  }
+  ctx.restore();
+  ctx.globalAlpha = 1;
+}
+
+// ─── SCREEN OVERLAYS ───────────────────────────────────────────────────────
+function showScreen(type) {
+  const s = document.getElementById('screen');
+  s.classList.remove('hidden');
+  s.innerHTML = '';
+
+  if (type === 'missioncomplete') {
+    const gotCoins = coinsCollected >= MISSIONS[mission].coinsNeeded;
+    s.innerHTML = `
+      <h1>MISSION ${mission+1}<br>COMPLETE!</h1>
+      <div class="subtitle">${MISSIONS[mission].name}</div>
+      <p>COINS: ${coinsCollected}/${MISSIONS[mission].coinsNeeded} ${gotCoins?'✅':'⚠️'}<br>SCORE: ${score}</p>
+      ${mission < 4 ? `<button class="btn" id="nextBtn">▶ NEXT MISSION</button>` : `<button class="btn" id="nextBtn">🏆 FINAL SCORE: ${score}</button>`}
+      <button class="btn" id="retryBtn" style="background:#555">↩ RETRY</button>
+    `;
+    document.getElementById('nextBtn').addEventListener('click', () => {
+      if (mission < 4) { lives = 10; startMission(mission + 1); }
+      else showScreen('win');
+    });
+    document.getElementById('retryBtn').addEventListener('click', () => { lives = 10; startMission(mission); });
+  } else if (type === 'gameover') {
+    s.innerHTML = `
+      <h1>GAME OVER</h1>
+      <p>SCORE: ${score}</p>
+      <button class="btn" id="restartBtn">▶ TRY AGAIN</button>
+    `;
+    document.getElementById('restartBtn').addEventListener('click', () => { score=0; lives=10; startMission(0); });
+  } else if (type === 'win') {
+    s.innerHTML = `
+      <h1>🏆 YOU WIN! 🏆</h1>
+      <div class="subtitle">SF CONQUERED!</div>
+      <p>FINAL SCORE: ${score}<br><br>You've explored all of San Francisco!</p>
+      <button class="btn" id="restartBtn">▶ PLAY AGAIN</button>
+    `;
+    document.getElementById('restartBtn').addEventListener('click', () => { score=0; lives=10; startMission(0); });
+  }
+}
+
+// ─── GAME LOOP ─────────────────────────────────────────────────────────────
+let lastTime = 0;
+let loopRunning = false;
+function loop(ts) {
+  if (state !== 'playing') { loopRunning = false; return; }
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+function startLoop() {
+  if (!loopRunning) {
+    loopRunning = true;
+    requestAnimationFrame(loop);
+  }
+}
+</script>
+</body>
+</html>
